@@ -10,7 +10,7 @@
 
 #include <arm_neon.h>
 
-namespace {
+namespace {  // NOLINT(google-build-namespaces)
 
 // ARMv8 has vrndm(q)_f32 to floor floats.  Here we emulate it:
 //   - roundtrip through integers via truncation
@@ -72,12 +72,6 @@ public:
         vst4_f32((float*) dst, abcd);
     }
 
-    AI SkNx invert() const {
-        float32x2_t est0 = vrecpe_f32(fVec),
-                    est1 = vmul_f32(vrecps_f32(est0, fVec), est0);
-        return est1;
-    }
-
     AI SkNx operator - () const { return vneg_f32(fVec); }
 
     AI SkNx operator + (const SkNx& o) const { return vadd_f32(fVec, o.fVec); }
@@ -113,11 +107,6 @@ public:
     #else
         return emulate_vrndm_f32(fVec);
     #endif
-    }
-
-    AI SkNx rsqrt() const {
-        float32x2_t est0 = vrsqrte_f32(fVec);
-        return vmul_f32(vrsqrts_f32(fVec, vmul_f32(est0, est0)), est0);
     }
 
     AI SkNx sqrt() const {
@@ -196,12 +185,6 @@ public:
         vst4q_f32((float*) dst, rgba);
     }
 
-    AI SkNx invert() const {
-        float32x4_t est0 = vrecpeq_f32(fVec),
-                    est1 = vmulq_f32(vrecpsq_f32(est0, fVec), est0);
-        return est1;
-    }
-
     AI SkNx operator - () const { return vnegq_f32(fVec); }
 
     AI SkNx operator + (const SkNx& o) const { return vaddq_f32(fVec, o.fVec); }
@@ -240,11 +223,6 @@ public:
     }
 
 
-    AI SkNx rsqrt() const {
-        float32x4_t est0 = vrsqrteq_f32(fVec);
-        return vmulq_f32(vrsqrtsq_f32(fVec, vmulq_f32(est0, est0)), est0);
-    }
-
     AI SkNx sqrt() const {
     #if defined(SK_CPU_ARM64)
         return vsqrtq_f32(fVec);
@@ -267,7 +245,7 @@ public:
         return vminvq_f32(fVec);
     #else
         SkNx min = Min(*this, vrev64q_f32(fVec));
-        return SkTMin(min[0], min[2]);
+        return std::min(min[0], min[2]);
     #endif
     }
 
@@ -276,7 +254,7 @@ public:
         return vmaxvq_f32(fVec);
     #else
         SkNx max = Max(*this, vrev64q_f32(fVec));
-        return SkTMax(max[0], max[2]);
+        return std::max(max[0], max[2]);
     #endif
     }
 
@@ -496,6 +474,7 @@ public:
 
     AI SkNx operator + (const SkNx& o) const { return vaddq_u8(fVec, o.fVec); }
     AI SkNx operator - (const SkNx& o) const { return vsubq_u8(fVec, o.fVec); }
+    AI SkNx operator & (const SkNx& o) const { return vandq_u8(fVec, o.fVec); }
 
     AI static SkNx Min(const SkNx& a, const SkNx& b) { return vminq_u8(a.fVec, b.fVec); }
     AI SkNx operator < (const SkNx& o) const { return vcltq_u8(fVec, o.fVec); }

@@ -10,7 +10,9 @@
 #ifndef SkParse_DEFINED
 #define SkParse_DEFINED
 
-#include "SkColor.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 
 class SK_API SkParse {
 public:

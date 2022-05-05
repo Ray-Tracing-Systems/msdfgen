@@ -14,6 +14,20 @@ if(WIN32)
         IMPORTED_CONFIGURATIONS "RELEASE;DEBUG"
     )
     target_include_directories(Skia::Skia INTERFACE
+        "${CMAKE_CURRENT_LIST_DIR}"
+        "${CMAKE_CURRENT_LIST_DIR}/include"
+        "${CMAKE_CURRENT_LIST_DIR}/include/core"
+        "${CMAKE_CURRENT_LIST_DIR}/include/config"
+    )
+else()
+    set(SKIA_LIB_DIR "${CMAKE_CURRENT_LIST_DIR}/linux_x64")
+    add_library(Skia::Skia SHARED IMPORTED)
+    set_target_properties(Skia::Skia PROPERTIES
+        IMPORTED_LOCATION "${SKIA_LIB_DIR}/libskia.so"
+        IMPORTED_CONFIGURATIONS "RELEASE"
+    )
+    target_include_directories(Skia::Skia INTERFACE
+        "${CMAKE_CURRENT_LIST_DIR}"
         "${CMAKE_CURRENT_LIST_DIR}/include"
         "${CMAKE_CURRENT_LIST_DIR}/include/core"
         "${CMAKE_CURRENT_LIST_DIR}/include/config"

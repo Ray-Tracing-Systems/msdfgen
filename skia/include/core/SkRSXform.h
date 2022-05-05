@@ -8,8 +8,8 @@
 #ifndef SkRSXform_DEFINED
 #define SkRSXform_DEFINED
 
-#include "SkPoint.h"
-#include "SkSize.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkSize.h"
 
 /**
  *  A compressed form of a rotation+scale matrix.
@@ -18,7 +18,7 @@
  *  [ fSSin      fSCos    fTy ]
  *  [     0          0      1 ]
  */
-struct SkRSXform {
+struct SK_API SkRSXform {
     static SkRSXform Make(SkScalar scos, SkScalar ssin, SkScalar tx, SkScalar ty) {
         SkRSXform xform = { scos, ssin, tx, ty };
         return xform;

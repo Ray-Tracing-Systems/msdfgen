@@ -8,18 +8,20 @@
 #ifndef GrContextOptions_DEFINED
 #define GrContextOptions_DEFINED
 
-#include "SkData.h"
-#include "SkTypes.h"
-#include "GrTypes.h"
-#include "../private/GrTypesPriv.h"
-#include "GrDriverBugWorkarounds.h"
+#include "include/core/SkData.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GrDriverBugWorkarounds.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ShaderErrorHandler.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 
 #include <vector>
 
 class SkExecutor;
 
 #if SK_SUPPORT_GPU
-struct GrContextOptions {
+struct SK_API GrContextOptions {
     enum class Enable {
         /** Forces an option to be disabled. */
         kNo,
@@ -31,27 +33,57 @@ struct GrContextOptions {
         kDefault
     };
 
+    enum class ShaderCacheStrategy {
+        kSkSL,
+        kBackendSource,
+        kBackendBinary,
+    };
+
     /**
      * Abstract class which stores Skia data in a cache that persists between sessions. Currently,
      * Skia stores compiled shader binaries (only when glProgramBinary / glGetProgramBinary are
      * supported) when provided a persistent cache, but this may extend to other data in the future.
      */
-    class PersistentCache {
+    class SK_API PersistentCache {
     public:
-        virtual ~PersistentCache() {}
+        virtual ~PersistentCache() = default;
 
         /**
          * Returns the data for the key if it exists in the cache, otherwise returns null.
          */
         virtual sk_sp<SkData> load(const SkData& key) = 0;
 
-        virtual void store(const SkData& key, const SkData& data) = 0;
+        // Placeholder until all clients override the 3-parameter store(), then remove this, and
+        // make that version pure virtual.
+        virtual void store(const SkData& /*key*/, const SkData& /*data*/) { SkASSERT(false); }
+
+        /**
+         * Stores data in the cache, indexed by key. description provides a human-readable
+         * version of the key.
+         */
+        virtual void store(const SkData& key, const SkData& data, const SkString& /*description*/) {
+            this->store(key, data);
+        }
+
+    protected:
+        PersistentCache() = default;
+        PersistentCache(const PersistentCache&) = delete;
+        PersistentCache& operator=(const PersistentCache&) = delete;
     };
+
+    using ShaderErrorHandler = skgpu::ShaderErrorHandler;
 
     GrContextOptions() {}
 
     // Suppress prints for the GrContext.
     bool fSuppressPrints = false;
+
+    /**
+     * Controls whether we check for GL errors after functions that allocate resources (e.g.
+     * glTexImage2D), for shader compilation success, and program link success. Ignored on
+     * backends other than GL.
+     */
+    Enable fSkipGLErrorChecks = Enable::kDefault;
 
     /** Overrides: These options override feature detection using backend API queries. These
         overrides can only reduce the feature set or limits, never increase them beyond the
@@ -74,15 +106,16 @@ struct GrContextOptions {
 
     /** Construct mipmaps manually, via repeated downsampling draw-calls. This is used when
         the driver's implementation (glGenerateMipmap) contains bugs. This requires mipmap
-        level and LOD control (ie desktop or ES3). */
+        level control (ie desktop or ES3). */
     bool fDoManualMipmapping = false;
 
     /**
-     * Disables the coverage counting path renderer. Coverage counting can sometimes cause new
-     * rendering artifacts along shared edges if care isn't taken to ensure both contours wind in
-     * the same direction.
+     * Disables the use of coverage counting shortcuts to render paths. Coverage counting can cause
+     * artifacts along shared edges if care isn't taken to ensure both contours wind in the same
+     * direction.
      */
-    bool fDisableCoverageCountingPaths = false;
+    // FIXME: Once this is removed from Chrome and Android, rename to fEnable"".
+    bool fDisableCoverageCountingPaths = true;
 
     /**
      * Disables distance field rendering for paths. Distance field computation can be expensive,
@@ -109,16 +142,20 @@ struct GrContextOptions {
 
     /**
      * Below this threshold size in device space distance field fonts won't be used. Distance field
-     * fonts don't support hinting which is more important at smaller sizes. A negative value means
-     * use the default threshold.
+     * fonts don't support hinting which is more important at smaller sizes.
      */
-    float fMinDistanceFieldFontSize = -1.f;
+    float fMinDistanceFieldFontSize = 18;
 
     /**
-     * Above this threshold size in device space glyphs are drawn as individual paths. A negative
-     * value means use the default threshold.
+     * Above this threshold size in device space glyphs are drawn as individual paths.
      */
-    float fGlyphsAsPathsFontSize = -1.f;
+#if defined(SK_BUILD_FOR_ANDROID)
+    float fGlyphsAsPathsFontSize = 384;
+#elif defined(SK_BUILD_FOR_MAC)
+    float fGlyphsAsPathsFontSize = 256;
+#else
+    float fGlyphsAsPathsFontSize = 324;
+#endif
 
     /**
      * Can the glyph atlas use multiple textures. If allowed, the each texture's size is bound by
@@ -133,50 +170,17 @@ struct GrContextOptions {
     bool fAvoidStencilBuffers = false;
 
     /**
-     * When specifing new data for a vertex/index buffer that replaces old data Ganesh can give
-     * a hint to the driver that the previous data will not be used in future draws like this:
-     *  glBufferData(GL_..._BUFFER, size, NULL, usage);       //<--hint, NULL means
-     *  glBufferSubData(GL_..._BUFFER, 0, lessThanSize, data) //   old data can't be
-     *                                                        //   used again.
-     * However, this can be an unoptimization on some platforms, esp. Chrome.
-     * Chrome's cmd buffer will create a new allocation and memset the whole thing
-     * to zero (for security reasons).
-     * Defaults to the value of GR_GL_USE_BUFFER_DATA_NULL_HINT #define (which is, by default, 1).
+     * Enables driver workaround to use draws instead of HW clears, e.g. glClear on the GL backend.
      */
-    Enable fUseGLBufferDataNullHint = Enable::kDefault;
+    Enable fUseDrawInsteadOfClear = Enable::kDefault;
 
     /**
-     * If true, texture fetches from mip-mapped textures will be biased to read larger MIP levels.
-     * This has the effect of sharpening those textures, at the cost of some aliasing, and possible
-     * performance impact.
+     * Allow Ganesh to more aggressively reorder operations to reduce the number of render passes.
+     * Offscreen draws will be done upfront instead of interrupting the main render pass when
+     * possible. May increase VRAM usage, but still observes the resource cache limit.
+     * Enabled by default.
      */
-    bool fSharpenMipmappedTextures = false;
-
-    /**
-     * Enables driver workaround to use draws instead of glClear. This only applies to
-     * GrBackendApi::kOpenGL.
-     */
-    Enable fUseDrawInsteadOfGLClear = Enable::kDefault;
-
-    /**
-     * Allow Ganesh to explicitly allocate resources at flush time rather than incrementally while
-     * drawing. This will eventually just be the way it is but, for now, it is optional.
-     */
-    Enable fExplicitlyAllocateGPUResources = Enable::kDefault;
-
-    /**
-     * Allow Ganesh to sort the opLists prior to allocating resources. This is an optional
-     * behavior that is only relevant when 'fExplicitlyAllocateGPUResources' is enabled.
-     * Eventually this will just be what is done and will not be optional.
-     */
-    Enable fSortRenderTargets = Enable::kDefault;
-
-    /**
-     * Allow Ganesh to more aggressively reorder operations. This is an optional
-     * behavior that is only relevant when 'fSortRenderTargets' is enabled.
-     * Eventually this will just be what is done and will not be optional.
-     */
-    Enable fReduceOpListSplitting = Enable::kDefault;
+    Enable fReduceOpsTaskSplitting = Enable::kDefault;
 
     /**
      * Some ES3 contexts report the ES2 external image extension, but not the ES3 version.
@@ -193,9 +197,81 @@ struct GrContextOptions {
     bool fDisableDriverCorrectnessWorkarounds = false;
 
     /**
+     * Maximum number of GPU programs or pipelines to keep active in the runtime cache.
+     */
+    int fRuntimeProgramCacheSize = 256;
+
+    /**
      * Cache in which to store compiled shader binaries between runs.
      */
     PersistentCache* fPersistentCache = nullptr;
+
+    /**
+     * This affects the usage of the PersistentCache. We can cache SkSL, backend source (GLSL), or
+     * backend binaries (GL program binaries). By default we cache binaries, but if the driver's
+     * binary loading/storing is believed to have bugs, this can be limited to caching GLSL.
+     * Caching GLSL strings still saves CPU work when a GL program is created.
+     */
+    ShaderCacheStrategy fShaderCacheStrategy = ShaderCacheStrategy::kBackendBinary;
+
+    /**
+     * If present, use this object to report shader compilation failures. If not, report failures
+     * via SkDebugf and assert.
+     */
+    ShaderErrorHandler* fShaderErrorHandler = nullptr;
+
+    /**
+     * Specifies the number of samples Ganesh should use when performing internal draws with MSAA
+     * (hardware capabilities permitting).
+     *
+     * If 0, Ganesh will disable internal code paths that use multisampling.
+     */
+    int  fInternalMultisampleCount = 4;
+
+    /**
+     * In Skia's vulkan backend a single GrContext submit equates to the submission of a single
+     * primary command buffer to the VkQueue. This value specifies how many vulkan secondary command
+     * buffers we will cache for reuse on a given primary command buffer. A single submit may use
+     * more than this many secondary command buffers, but after the primary command buffer is
+     * finished on the GPU it will only hold on to this many secondary command buffers for reuse.
+     *
+     * A value of -1 means we will pick a limit value internally.
+     */
+    int fMaxCachedVulkanSecondaryCommandBuffers = -1;
+
+    /**
+     * If true, the caps will never support mipmaps.
+     */
+    bool fSuppressMipmapSupport = false;
+
+    /**
+     * If true, and if supported, enables hardware tessellation in the caps.
+     * DEPRECATED: This value is ignored; experimental hardware tessellation is always disabled.
+     */
+    bool fEnableExperimentalHardwareTessellation = false;
+
+    /**
+     * If true, then add 1 pixel padding to all glyph masks in the atlas to support bi-lerp
+     * rendering of all glyphs. This must be set to true to use GrSlug.
+     */
+    #if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG) || \
+        defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_SERIALIZE) || \
+        defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_STRIKE_SERIALIZE)
+    bool fSupportBilerpFromGlyphAtlas = true;
+    #else
+    bool fSupportBilerpFromGlyphAtlas = false;
+    #endif
+
+    /**
+     * Uses a reduced variety of shaders. May perform less optimally in steady state but can reduce
+     * jank due to shader compilations.
+     */
+    bool fReducedShaderVariations = false;
+
+    /**
+     * If true, then allow to enable MSAA on new Intel GPUs.
+     */
+    bool fAllowMSAAOnNewIntel = false;
 
 #if GR_TEST_UTILS
     /**
@@ -203,25 +279,25 @@ struct GrContextOptions {
      */
 
     /**
-     * If non-zero, overrides the maximum size of a tile for sw-backed images and bitmaps rendered
-     * by SkGpuDevice.
-     */
-    int  fMaxTileSizeOverride = 0;
-
-    /**
      * Prevents use of dual source blending, to test that all xfer modes work correctly without it.
      */
     bool fSuppressDualSourceBlending = false;
 
     /**
-     * If true, the caps will never report driver support for path rendering.
+     * Prevents the use of non-coefficient-based blend equations, for testing dst reads, barriers,
+     * and in-shader blending.
      */
-    bool fSuppressPathRendering = false;
+    bool fSuppressAdvancedBlendEquations = false;
 
     /**
-     * If true, the caps will never support geometry shaders.
+     * Prevents the use of framebuffer fetches, for testing dst reads and texture barriers.
      */
-    bool fSuppressGeometryShaders = false;
+    bool fSuppressFramebufferFetch = false;
+
+    /**
+     * If true, then all paths are processed as if "setIsVolatile" had been called.
+     */
+    bool fAllPathsVolatile = false;
 
     /**
      * Render everything in wireframe
@@ -229,23 +305,37 @@ struct GrContextOptions {
     bool fWireframeMode = false;
 
     /**
+     * Enforces clearing of all textures when they're created.
+     */
+    bool fClearAllTextures = false;
+
+    /**
+     * Randomly generate a (false) GL_OUT_OF_MEMORY error
+     */
+    bool fRandomGLOOM = false;
+
+    /**
+     * Force off support for write/transfer pixels row bytes in caps.
+     */
+    bool fDisallowWriteAndTransferPixelRowBytes = false;
+
+    /**
      * Include or exclude specific GPU path renderers.
      */
-    GpuPathRenderers fGpuPathRenderers = GpuPathRenderers::kAll;
+    GpuPathRenderers fGpuPathRenderers = GpuPathRenderers::kDefault;
 
     /**
-     * Disables using multiple texture units to batch multiple images into a single draw on
-     * supported GPUs.
+     * Specify the GPU resource cache limit. Equivalent to calling `setResourceCacheLimit` on the
+     * context at construction time.
+     *
+     * A value of -1 means use the default limit value.
      */
-    bool fDisableImageMultitexturing = false;
-#endif
+    int fResourceCacheLimitOverride = -1;
 
-#if SK_SUPPORT_ATLAS_TEXT
     /**
-     * Controls whether distance field glyph vertices always have 3 components even when the view
-     * matrix does not have perspective.
+     * Maximum width and height of internal texture atlases.
      */
-    Enable fDistanceFieldGlyphVerticesAlwaysHaveW = Enable::kDefault;
+    int  fMaxTextureAtlasSize = 2048;
 #endif
 
     GrDriverBugWorkarounds fDriverBugWorkarounds;

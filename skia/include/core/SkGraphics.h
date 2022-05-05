@@ -8,10 +8,11 @@
 #ifndef SkGraphics_DEFINED
 #define SkGraphics_DEFINED
 
-#include "SkRefCnt.h"
+#include "include/core/SkRefCnt.h"
 
 class SkData;
 class SkImageGenerator;
+class SkOpenTypeSVGDecoder;
 class SkTraceMemoryDump;
 
 class SK_API SkGraphics {
@@ -22,15 +23,6 @@ public:
      *  Init() is thread-safe and idempotent.
      */
     static void Init();
-
-    // We're in the middle of cleaning this up.
-    static void Term() {}
-
-    /**
-     *  Return the version numbers for the library. If the parameter is not
-     *  null, it is set to the version number.
-     */
-    static void GetVersion(int32_t* major, int32_t* minor, int32_t* patch);
 
     /**
      *  Return the max number of bytes that should be used by the font cache.
@@ -72,30 +64,6 @@ public:
      */
     static int SetFontCacheCountLimit(int count);
 
-    /*
-     *  Returns the maximum point size for text that may be cached.
-     *
-     *  Sizes above this will be drawn directly from the font's outline.
-     *  Setting this to a large value may speed up drawing larger text (repeatedly),
-     *  but could cause the cache to purge other sizes more often.
-     *
-     *  This value is a hint to the font engine, and the actual limit may be different due to
-     *  implementation specific details.
-     */
-    static int GetFontCachePointSizeLimit();
-
-    /*
-     *  Set the maximum point size for text that may be cached, returning the previous value.
-     *
-     *  Sizes above this will be drawn directly from the font's outline.
-     *  Setting this to a large value may speed up drawing larger text (repeatedly),
-     *  but could cause the cache to purge other sizes more often.
-     *
-     *  This value is a hint to the font engine, and the actual limit may be different due to
-     *  implementation specific details.
-     */
-    static int SetFontCachePointSizeLimit(int maxPointSize);
-
     /**
      *  For debugging purposes, this will attempt to purge the font cache. It
      *  does not change the limit, but will cause subsequent font measures and
@@ -104,11 +72,7 @@ public:
     static void PurgeFontCache();
 
     /**
-     *  Scaling bitmaps with the kHigh_SkFilterQuality setting is
-     *  expensive, so the result is saved in the global Scaled Image
-     *  Cache.
-     *
-     *  This function returns the memory usage of the Scaled Image Cache.
+     *  This function returns the memory used for temporary images and other resources.
      */
     static size_t GetResourceCacheTotalBytesUsed();
 
@@ -173,6 +137,23 @@ public:
      */
     static ImageGeneratorFromEncodedDataFactory
                     SetImageGeneratorFromEncodedDataFactory(ImageGeneratorFromEncodedDataFactory);
+
+    /**
+     *  To draw OpenType SVG data, Skia will look at this runtime function pointer. If this function
+     *  pointer is set, the SkTypeface implementations which support OpenType SVG will call this
+     *  function to create an SkOpenTypeSVGDecoder to decode the OpenType SVG and draw it as needed.
+     *  If this function is not set, the SkTypeface implementations will generally not support
+     *  OpenType SVG and attempt to use other glyph representations if available.
+     */
+    using OpenTypeSVGDecoderFactory =
+            std::unique_ptr<SkOpenTypeSVGDecoder> (*)(const uint8_t* svg, size_t length);
+    static OpenTypeSVGDecoderFactory SetOpenTypeSVGDecoderFactory(OpenTypeSVGDecoderFactory);
+    static OpenTypeSVGDecoderFactory GetOpenTypeSVGDecoderFactory();
+
+    /**
+     *  Call early in main() to allow Skia to use a JIT to accelerate CPU-bound operations.
+     */
+    static void AllowJIT();
 };
 
 class SkAutoGraphics {

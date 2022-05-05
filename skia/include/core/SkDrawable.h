@@ -8,8 +8,9 @@
 #ifndef SkDrawable_DEFINED
 #define SkDrawable_DEFINED
 
-#include "SkFlattenable.h"
-#include "SkScalar.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkScalar.h"
 
 class GrBackendDrawableInfo;
 class SkCanvas;
@@ -74,12 +75,14 @@ public:
     /**
      * Snaps off a GpuDrawHandler to represent the state of the SkDrawable at the time the snap is
      * called. This is used for executing GPU backend specific draws intermixed with normal Skia GPU
-     * draws. The GPU API, which will be used for the draw, as well as the full matrix are passed in
-     * as inputs.
+     * draws. The GPU API, which will be used for the draw, as well as the full matrix, device clip
+     * bounds and imageInfo of the target buffer are passed in as inputs.
      */
     std::unique_ptr<GpuDrawHandler> snapGpuDrawHandler(GrBackendApi backendApi,
-                                                       const SkMatrix& matrix) {
-        return this->onSnapGpuDrawHandler(backendApi, matrix);
+                                                       const SkMatrix& matrix,
+                                                       const SkIRect& clipBounds,
+                                                       const SkImageInfo& bufferInfo) {
+        return this->onSnapGpuDrawHandler(backendApi, matrix, clipBounds, bufferInfo);
     }
 
     SkPicture* newPictureSnapshot();
@@ -99,6 +102,12 @@ public:
      *  must return a bounds that is always valid for all possible states.
      */
     SkRect getBounds();
+
+    /**
+     *  Return approximately how many bytes would be freed if this drawable is destroyed.
+     *  The base implementation returns 0 to indicate that this is unknown.
+     */
+    size_t approximateBytesUsed();
 
     /**
      *  Calling this invalidates the previous generation ID, and causes a new one to be computed
@@ -129,8 +138,16 @@ protected:
     SkDrawable();
 
     virtual SkRect onGetBounds() = 0;
+    virtual size_t onApproximateBytesUsed();
     virtual void onDraw(SkCanvas*) = 0;
 
+    virtual std::unique_ptr<GpuDrawHandler> onSnapGpuDrawHandler(GrBackendApi, const SkMatrix&,
+                                                                 const SkIRect& /*clipBounds*/,
+                                                                 const SkImageInfo&) {
+        return nullptr;
+    }
+
+    // TODO: Delete this once Android gets updated to take the clipBounds version above.
     virtual std::unique_ptr<GpuDrawHandler> onSnapGpuDrawHandler(GrBackendApi, const SkMatrix&) {
         return nullptr;
     }

@@ -2,11 +2,12 @@
 cmake_minimum_required(VERSION 3.15)
 
 option(MSDFGEN_CORE_ONLY "Only build the core library with no dependencies" OFF)
-option(MSDFGEN_BUILD_STANDALONE "Build the msdfgen standalone executable" ON)
-option(MSDFGEN_USE_OPENMP "Build with OpenMP support for multithreaded code" OFF)
+option(MSDFGEN_BUILD_STANDALONE "Build the msdfgen standalone executable" OFF)
+option(MSDFGEN_USE_OPENMP "Build with OpenMP support for multithreaded code" ON)
 option(MSDFGEN_USE_CPP11 "Build with C++11 enabled" ON)
-option(MSDFGEN_USE_SKIA "Build with the Skia library" OFF)
-option(MSDFGEN_INSTALL "Generate installation target" ON)
+option(MSDFGEN_USE_CPP17 "Build with C++17 enabled" ON)
+option(MSDFGEN_USE_SKIA "Build with the Skia library" ON)
+option(MSDFGEN_INSTALL "Generate installation target" OFF)
 
 if(MSDFGEN_CORE_ONLY AND MSDFGEN_BUILD_STANDALONE)
     message(WARNING "Option MSDFGEN_CORE_ONLY ignored - extensions are required for standalone executable")
@@ -47,6 +48,11 @@ if(MSDFGEN_USE_CPP11)
     target_compile_features(msdfgen-core PUBLIC cxx_std_11)
     target_compile_definitions(msdfgen-core PUBLIC MSDFGEN_USE_CPP11)
 endif()
+if(MSDFGEN_USE_CPP17)
+    target_compile_features(msdfgen-core PUBLIC cxx_std_17)
+    target_compile_definitions(msdfgen-core PUBLIC MSDFGEN_USE_CPP17)
+endif()
+
 
 if(MSDFGEN_USE_OPENMP)
     # Note: Clang doesn't support OpenMP by default...

@@ -77,6 +77,7 @@ if(NOT MSDFGEN_CORE_ONLY)
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT msdfgen-ext)
 
     if(MSDFGEN_USE_SKIA)
+        set(Skia_DIR skia)
         find_package(Skia REQUIRED)
         target_compile_definitions(msdfgen-ext PUBLIC MSDFGEN_USE_SKIA)
         target_link_libraries(msdfgen-ext PUBLIC Skia::Skia)
